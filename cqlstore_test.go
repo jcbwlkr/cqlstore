@@ -18,6 +18,7 @@ type testSuite struct {
 	cluster *gocql.ClusterConfig
 }
 
+// TestMySuite bootstraps and runs the test suite
 func TestMySuite(t *testing.T) {
 	suite.Run(t, new(testSuite))
 }
@@ -29,8 +30,8 @@ func (suite *testSuite) SetupTest() {
 	suite.NoError(err)
 }
 
-// doSetup does the actual work of setting up. This is so we can use it in
-// benchmarks.
+// doSetup does the actual work of setting up. This is extracted so we can use
+// it in benchmarks which don't have access to the suite helpers.
 func doSetup() (*gocql.ClusterConfig, error) {
 	url := os.Getenv("CQLSTORE_URL")
 	keyspace := os.Getenv("CQLSTORE_KEYSPACE")
@@ -70,7 +71,7 @@ func (suite *testSuite) TearDownTest() {
 	suite.NoError(err)
 }
 
-// doTearDown does the actual work of tearing down. This is factored out so we
+// doTearDown does the actual work of tearing down. This is extracted out so we
 // can use it during benchmarking when the full suite isn't available.
 func doTearDown(cluster *gocql.ClusterConfig) error {
 	sess, err := cluster.CreateSession()

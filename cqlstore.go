@@ -1,3 +1,5 @@
+// Package cqlstore provides an Apache Cassandra implementation of HTTP session
+// storage for github.com/gorilla/sessions.
 package cqlstore
 
 import (
@@ -11,6 +13,8 @@ import (
 	"github.com/gorilla/sessions"
 )
 
+// CQLStore provides a Cassandra backed implementation of the interface Store
+// from github.com/gorilla/sessions
 type CQLStore struct {
 	Options *sessions.Options
 	Codecs  []securecookie.Codec
@@ -19,11 +23,11 @@ type CQLStore struct {
 	loadQ *gocql.Query
 }
 
-// TODO add expiration
-// TODO method to close db
-// TODO documentation
-// TODO better error handling
-
+// New creates a new CQLStore. It requires an active gocql.Session and the name
+// of the table where it should store session data. It will create this table
+// with the appropriate schema if it does not exist. Additionally pass one or
+// more byte slices to serve as authentication and/or encryption keys for both
+// the cookie's session ID value and the values stored in the database.
 func New(cs *gocql.Session, table string, keypairs ...[]byte) (*CQLStore, error) {
 	var err error
 
@@ -43,8 +47,6 @@ func New(cs *gocql.Session, table string, keypairs ...[]byte) (*CQLStore, error)
 	if err != nil {
 		return &CQLStore{}, createError{err}
 	}
-
-	// TODO prepare all of the queries I need and just stick them on my store
 
 	st := &CQLStore{
 		Options: &sessions.Options{
@@ -66,8 +68,11 @@ func (st *CQLStore) Get(r *http.Request, name string) (*sessions.Session, error)
 	return sessions.GetRegistry(r).Get(st, name)
 }
 
-// New creates and returns a new session without adding it to the registry. It
-// never returns a nil session.
+// New creates and returns a new session without adding it to the registry. If
+// the request has the named cookie then it will decode the session ID and load
+// session values from the database. If the request might already have had the
+// session loaded then calling Get instead will be faster. It never returns a
+// nil session.
 func (st *CQLStore) New(r *http.Request, name string) (*sessions.Session, error) {
 	s := sessions.NewSession(st, name)
 	s.Options = &(*st.Options)
@@ -101,7 +106,9 @@ func (st *CQLStore) New(r *http.Request, name string) (*sessions.Session, error)
 	return s, nil
 }
 
-// Save persists session to the database.
+// Save persists session values to the database and adds the session ID cookie
+// to the request. Save must be called before writing the response or the
+// cookie will not be sent.
 func (st *CQLStore) Save(r *http.Request, w http.ResponseWriter, s *sessions.Session) error {
 	if s.ID == "" {
 		// TODO is there a better one to use here?
@@ -127,6 +134,8 @@ func (st *CQLStore) Save(r *http.Request, w http.ResponseWriter, s *sessions.Ses
 
 	return nil
 }
+
+// TODO better error handling
 
 type createError struct {
 	err error
