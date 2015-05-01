@@ -13,8 +13,8 @@ type CQLStore struct {
 	Options *sessions.Options
 	Codecs  []securecookie.Codec
 
-	table string
-	cs    *gocql.Session
+	saveQ *gocql.Query
+	loadQ *gocql.Query
 }
 
 // TODO add expiration
@@ -22,7 +22,7 @@ type CQLStore struct {
 // TODO documentation
 // TODO better error handling
 
-func New(cluster *gocql.ClusterConfig, table string, keypairs ...[]byte) (*CQLStore, error) {
+func New(cs *gocql.Session, table string, keypairs ...[]byte) (*CQLStore, error) {
 	// TODO sanitize table
 	cs, err := cluster.CreateSession()
 	_ = cs
@@ -51,8 +51,8 @@ func New(cluster *gocql.ClusterConfig, table string, keypairs ...[]byte) (*CQLSt
 		},
 		Codecs: securecookie.CodecsFromPairs(keypairs...),
 
-		table: table,
-		cs:    cs,
+		saveQ: cs.Query(`INSERT INTO "` + table + `" ("id", "data") VALUES(?, ?) USING TTL ?`),
+		loadQ: cs.Query(`SELECT "data" FROM "` + table + `" WHERE "id" = ?`),
 	}
 
 	return st, nil
@@ -85,9 +85,8 @@ func (st *CQLStore) New(r *http.Request, name string) (*sessions.Session, error)
 		return s, loadError{err}
 	}
 
-	sel := `SELECT "data" FROM "` + st.table + `" WHERE "id" = ?`
 	var encData string
-	if err := st.cs.Query(sel, s.ID).Scan(&encData); err != nil {
+	if err := st.loadQ.Bind(s.ID).Scan(&encData); err != nil {
 		return s, loadError{err}
 	}
 
@@ -113,9 +112,7 @@ func (st *CQLStore) Save(r *http.Request, w http.ResponseWriter, s *sessions.Ses
 		return saveError{err}
 	}
 
-	// TODO add TTL
-	insert := `INSERT INTO "` + st.table + `" ("id", "data") VALUES(?, ?) USING TTL ?`
-	if err := st.cs.Query(insert, s.ID, encData, st.Options.MaxAge).Exec(); err != nil {
+	if err := st.saveQ.Bind(s.ID, encData, st.Options.MaxAge).Exec(); err != nil {
 		return saveError{err}
 	}
 

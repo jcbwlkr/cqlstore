@@ -1,6 +1,7 @@
 package cqlstore_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -23,19 +24,29 @@ func TestMySuite(t *testing.T) {
 
 // SetupTest runs before each test to make a new keyspace for testing.
 func (suite *testSuite) SetupTest() {
+	var err error
+	suite.cluster, err = doSetup()
+	suite.NoError(err)
+}
+
+// doSetup does the actual work of setting up. This is so we can use it in
+// benchmarks.
+func doSetup() (*gocql.ClusterConfig, error) {
 	url := os.Getenv("CQLSTORE_URL")
 	keyspace := os.Getenv("CQLSTORE_KEYSPACE")
 	if url == "" || keyspace == "" {
 		msg := "Missing required environment vars. Tests requires a running " +
 			"Cassandra instance with the environment vars CQLSTORE_URL and " +
 			"CQLSTORE_KEYSPACE defined"
-		suite.Fail(msg)
+		return nil, errors.New(msg)
 	}
 
-	suite.cluster = gocql.NewCluster(url)
+	cluster := gocql.NewCluster(url)
 
-	sess, err := suite.cluster.CreateSession()
-	suite.NoError(err)
+	sess, err := cluster.CreateSession()
+	if err != nil {
+		return nil, err
+	}
 
 	create := fmt.Sprintf(`
 		CREATE KEYSPACE %q WITH REPLICATION = {
@@ -44,23 +55,41 @@ func (suite *testSuite) SetupTest() {
 		}`,
 		keyspace,
 	)
-	err = sess.Query(create, suite.cluster.Keyspace).Exec()
-	suite.NoError(err)
+	if err := sess.Query(create, cluster.Keyspace).Exec(); err != nil {
+		return nil, err
+	}
 
-	suite.cluster.Keyspace = keyspace
+	cluster.Keyspace = keyspace
+
+	return cluster, nil
 }
 
 // TearDownTest runs after each test to drop the keyspace we create for this test
 func (suite *testSuite) TearDownTest() {
-	sess, err := suite.cluster.CreateSession()
-	suite.NoError(err)
-
-	err = sess.Query(fmt.Sprintf("DROP KEYSPACE %q", suite.cluster.Keyspace)).Exec()
+	err := doTearDown(suite.cluster)
 	suite.NoError(err)
 }
 
+// doTearDown does the actual work of tearing down. This is factored out so we
+// can use it during benchmarking when the full suite isn't available.
+func doTearDown(cluster *gocql.ClusterConfig) error {
+	sess, err := cluster.CreateSession()
+	if err != nil {
+		return err
+	}
+	err = sess.Query(fmt.Sprintf("DROP KEYSPACE %q", cluster.Keyspace)).Exec()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (suite *testSuite) TestSessionData() {
-	store, err := cqlstore.New(suite.cluster, "sessions", []byte("foo-bar-baz"))
+	dbSess, _ := suite.cluster.CreateSession()
+	defer dbSess.Close()
+
+	store, err := cqlstore.New(dbSess, "sessions", []byte("foo-bar-baz"))
 	suite.NoError(err)
 
 	// Step 1 ------------------------------------------------------------------
@@ -120,4 +149,52 @@ func (suite *testSuite) TestSessionData() {
 	req4.AddCookie(&http.Cookie{Name: "test-sess", Value: "bogus"})
 	_, err = store.Get(req4, "test-sess")
 	suite.Error(err)
+}
+
+// BenchmarkARoundTrip measures the time it takes to make a new session, save
+// it with some values, then make a new request that loads the same session.
+func BenchmarkARoundTrip(b *testing.B) {
+	cluster, err := doSetup()
+	if err != nil {
+		b.Error(err)
+	}
+	dbSess, err := cluster.CreateSession()
+	if err != nil {
+		b.Error(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		store, _ := cqlstore.New(dbSess, "sessions", []byte("bench-me"))
+		req1, _ := http.NewRequest("GET", "http://www.example.com/", nil)
+		sess, _ := store.Get(req1, "test-sess")
+
+		sess.Values["foo"] = "Foo"
+		sess.Values["bar"] = "Bar"
+
+		w := httptest.NewRecorder()
+		_ = sess.Save(req1, w)
+
+		req2, _ := http.NewRequest("GET", "http://www.example.com/", nil)
+
+		// Filter the test recorder through a Response so we can get cookie values
+		resp := http.Response{Header: w.Header()}
+		for _, c := range resp.Cookies() {
+			req2.AddCookie(c)
+		}
+
+		_, _ = store.Get(req2, "test-sess")
+
+		// I want each pass to make the table but I don't want to count the
+		// time I spend dropping it between passes
+		b.StopTimer()
+		_ = dbSess.Query(`DROP TABLE "sessions"`).Exec()
+		b.StartTimer()
+	}
+	b.StopTimer()
+
+	err = doTearDown(cluster)
+	if err != nil {
+		b.Error(err)
+	}
 }
