@@ -151,6 +151,14 @@ func (suite *testSuite) TestSessionData() {
 	suite.Error(err)
 }
 
+func (suite *testSuite) TestBadTableNames() {
+	dbSess, _ := suite.cluster.CreateSession()
+	defer dbSess.Close()
+
+	_, err := cqlstore.New(dbSess, `1"; DROP TABLE students; --`, []byte("bobby-tables"))
+	suite.Error(err)
+}
+
 // BenchmarkARoundTrip measures the time it takes to make a new session, save
 // it with some values, then make a new request that loads the same session.
 func BenchmarkARoundTrip(b *testing.B) {

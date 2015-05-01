@@ -1,7 +1,9 @@
 package cqlstore
 
 import (
+	"errors"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/gocql/gocql"
@@ -23,11 +25,11 @@ type CQLStore struct {
 // TODO better error handling
 
 func New(cs *gocql.Session, table string, keypairs ...[]byte) (*CQLStore, error) {
-	// TODO sanitize table
-	cs, err := cluster.CreateSession()
-	_ = cs
-	if err != nil {
-		return &CQLStore{}, err
+	var err error
+
+	re := regexp.MustCompile("^[a-zA-Z0-9_]+$")
+	if !re.MatchString(table) {
+		return &CQLStore{}, errors.New("Invalid table name " + table)
 	}
 
 	// TODO add more columns for timestamps?
