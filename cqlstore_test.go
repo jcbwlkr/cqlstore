@@ -152,6 +152,57 @@ func (suite *testSuite) TestSessionData() {
 	suite.Error(err)
 }
 
+func (suite *testSuite) TestDeletingASession() {
+	dbSess, _ := suite.cluster.CreateSession()
+	defer dbSess.Close()
+
+	store, err := cqlstore.New(dbSess, "sessions", []byte("foo-bar-baz"))
+	suite.NoError(err)
+
+	// Step 1 ------------------------------------------------------------------
+	// Make a session with some data. Check that it's in the store.
+	req1, err := http.NewRequest("GET", "http://www.example.com/", nil)
+	suite.NoError(err)
+
+	sess, err := store.Get(req1, "test-sess")
+	suite.NotNil(sess)
+	suite.NoError(err)
+	suite.True(sess.IsNew)
+
+	sess.Values["jerry"] = "Seinfeld"
+
+	w := httptest.NewRecorder()
+	err = sess.Save(req1, w)
+	suite.NoError(err)
+
+	var count int
+	err = dbSess.Query(`SELECT count(*) FROM "sessions"`).Scan(&count)
+	suite.NoError(err)
+	suite.Equal(1, count)
+
+	// Step 2 ------------------------------------------------------------------
+	// Delete the session by setting the maxage to -1. Ensure the cookie is set
+	// to expire and it's removed from the store.
+	sess.Options.MaxAge = -1
+
+	w2 := httptest.NewRecorder()
+	err = sess.Save(req1, w2)
+	suite.NoError(err)
+
+	// Ensure our response tells the browser to clear their value for the
+	// session id cookie
+	cookieHeader, ok := w2.Header()["Set-Cookie"]
+	if !ok {
+		suite.Fail("Missing expected header Set-Cookie")
+	}
+	suite.Equal("test-sess=; ", cookieHeader[0][:12])
+
+	// Ensure it was deleted from the db too
+	err = dbSess.Query(`SELECT count(*) FROM "sessions"`).Scan(&count)
+	suite.NoError(err)
+	suite.Equal(0, count)
+}
+
 func (suite *testSuite) TestBadTableNames() {
 	dbSess, _ := suite.cluster.CreateSession()
 	defer dbSess.Close()

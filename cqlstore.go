@@ -19,8 +19,9 @@ type CQLStore struct {
 	Options *sessions.Options
 	Codecs  []securecookie.Codec
 
-	saveQ *gocql.Query
-	loadQ *gocql.Query
+	saveQ   *gocql.Query
+	deleteQ *gocql.Query
+	loadQ   *gocql.Query
 }
 
 // New creates a new CQLStore. It requires an active gocql.Session and the name
@@ -55,8 +56,9 @@ func New(cs *gocql.Session, table string, keypairs ...[]byte) (*CQLStore, error)
 		},
 		Codecs: securecookie.CodecsFromPairs(keypairs...),
 
-		saveQ: cs.Query(`INSERT INTO "` + table + `" ("id", "data") VALUES(?, ?) USING TTL ?`),
-		loadQ: cs.Query(`SELECT "data" FROM "` + table + `" WHERE "id" = ?`),
+		saveQ:   cs.Query(`INSERT INTO "` + table + `" ("id", "data") VALUES(?, ?) USING TTL ?`),
+		deleteQ: cs.Query(`DELETE FROM "` + table + `" WHERE "id" = ?`),
+		loadQ:   cs.Query(`SELECT "data" FROM "` + table + `" WHERE "id" = ?`),
 	}
 
 	return st, nil
@@ -110,6 +112,15 @@ func (st *CQLStore) New(r *http.Request, name string) (*sessions.Session, error)
 // to the request. Save must be called before writing the response or the
 // cookie will not be sent.
 func (st *CQLStore) Save(r *http.Request, w http.ResponseWriter, s *sessions.Session) error {
+	if s.Options.MaxAge < 0 {
+		if err := st.deleteQ.Bind(s.ID).Exec(); err != nil {
+			return saveError{err}
+		}
+
+		http.SetCookie(w, sessions.NewCookie(s.Name(), "", s.Options))
+		return nil
+	}
+
 	if s.ID == "" {
 		// TODO is there a better one to use here?
 		s.ID = gocql.UUIDFromTime(time.Now()).String()
