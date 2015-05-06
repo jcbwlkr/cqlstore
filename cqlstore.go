@@ -77,8 +77,11 @@ func (st *CQLStore) Get(r *http.Request, name string) (*sessions.Session, error)
 // nil session.
 func (st *CQLStore) New(r *http.Request, name string) (*sessions.Session, error) {
 	s := sessions.NewSession(st, name)
-	s.Options = &(*st.Options)
 	s.IsNew = true
+
+	// Copy options from store to session
+	opts := *st.Options
+	s.Options = &opts
 
 	// See if the request has a cookie for this session. If it does not we can
 	// just return the new session struct.

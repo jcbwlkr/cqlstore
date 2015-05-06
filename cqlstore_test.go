@@ -211,6 +211,31 @@ func (suite *testSuite) TestBadTableNames() {
 	suite.Error(err)
 }
 
+func (suite *testSuite) TestSettingOptionsOnOneDoesNotSetForAll() {
+	dbSess, _ := suite.cluster.CreateSession()
+	defer dbSess.Close()
+
+	store, err := cqlstore.New(dbSess, `sessions`, []byte("banana"))
+	suite.NoError(err)
+
+	store.Options.MaxAge = 1800
+
+	r, err := http.NewRequest("GET", "http://www.example.com/", nil)
+	suite.NoError(err)
+
+	sess, err := store.Get(r, "test-sess")
+	suite.NoError(err)
+
+	sess.Options.MaxAge = 900
+
+	w := httptest.NewRecorder()
+	sess.Save(r, w)
+
+	// Setting the MaxAge value above should not affect the store (and
+	// therefore all subsequently generated sessions)
+	suite.Equal(1800, store.Options.MaxAge)
+}
+
 // BenchmarkARoundTrip measures the time it takes to make a new session, save
 // it with some values, then make a new request that loads the same session.
 func BenchmarkARoundTrip(b *testing.B) {
