@@ -1,0 +1,10 @@
+language: go
+
+go:
+  - 1.3
+  - tip
+
+services:
+  - cassandra
+
+env: CQLSTORE_URL=127.0.0.1 CQLSTORE_KEYSPACE=test

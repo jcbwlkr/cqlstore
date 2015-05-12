@@ -2,7 +2,7 @@
 
 A Cassandra implementation for `github.com/gorilla/sessions`
 
-Example and API references on GoDoc [![GoDoc][godoc-badge]][godoc]
+Example and API references on GoDoc [![GoDoc][godoc-badge]][godoc][![Travis][travis-badge]][travis]
 
 # Stability Note
 
@@ -20,3 +20,5 @@ be created and dropped as part of the test suite.
 
 [godoc]: https://godoc.org/github.com/jcbwlkr/cqlstore "GoDoc"
 [godoc-badge]: https://godoc.org/github.com/jcbwlkr/cqlstore?status.svg "GoDoc Badge"
+[travis]: https://travis-ci.org/jcbwlkr/cqlstore "Travis"
+[travis-badge]: https://travis-ci.org/jcbwlkr/cqlstore.svg?branch=travis "Travis Badge"
