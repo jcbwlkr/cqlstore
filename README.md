@@ -1,8 +1,10 @@
 # cqlstore
 
-A Cassandra implementation for `github.com/gorilla/sessions`
+[![GoDoc][godoc-badge]][godoc][![Travis][travis-badge]][travis]
 
-Example and API references on GoDoc [![GoDoc][godoc-badge]][godoc][![Travis][travis-badge]][travis]
+A Cassandra implementation for `github.com/gorilla/sessions`.
+
+Example and API references on GoDoc
 
 # Stability Note
 
